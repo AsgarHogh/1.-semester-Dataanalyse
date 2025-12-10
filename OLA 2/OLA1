@@ -1,0 +1,279 @@
+#############################################
+###############  OPGAVE 4.1  ################
+#############################################
+
+# Henter DST’s forbrugertillidsindikator (FTI)
+FORV1 <- dst_meta("FORV1", lang = "da")
+
+FORV1query <- list(INDIKATOR = "Forbrugertillidsindikatoren",
+                   Tid = "*")
+
+FORV <- dst_get_data(table = "FORV1", query = FORV1query, lang = "da")
+FORV <- FORV[as.Date(FORV$TID) > as.Date("1995-12-01"), ]
+
+
+# Omregner månedlige værdier til kvartaler
+FORVQ <- data.frame()
+
+for (k in unique(FORV$INDIKATOR)) {
+  sub <- FORV[FORV$INDIKATOR == k, ]
+  
+  for (i in seq_along(sub$value)) {
+    if (i %% 3 == 0) { 
+      mean_score <- mean(sub$value[(i-2):i])
+      tmp <- data.frame(
+        Kategori = k,
+        Kvartal = sub$TID[i],
+        MeanScore = mean_score
+      )
+      FORVQ <- rbind(FORVQ, tmp)
+    }
+  }
+}
+
+
+# Gør klar til plot
+FORVQ_plot <- FORVQ %>% mutate(Dato = as.Date(Kvartal))
+
+# Plotter udviklingen
+ggplot(FORVQ_plot, aes(x = Dato, y = MeanScore)) +
+  geom_area(fill = "#d7301f", alpha = 0.10, color = NA) +
+  geom_line(color = "#d7301f", linewidth = 1.1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_point(data = tail(FORVQ_plot, 1), size = 3, color = "#d7301f") +
+  geom_label(
+    data = tail(FORVQ_plot, 1),
+    aes(label = round(MeanScore, 1)),
+    nudge_x = 60, vjust = 0.5,
+    label.size = 0, fill = "white", color = "#333333"
+  ) +
+  scale_x_date(date_breaks = "1 years", date_labels = "%Y",
+               expand = expansion(mult = c(0.02, 0.15))) +
+  labs(
+    title = "Forbrugertillidsindikator",
+    subtitle = "Kvartalsvise nettotalsværdier",
+    x = "År", y = "Nettotal",
+    caption = "Kilde: Danmarks Statistik, FORV1"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    plot.subtitle = element_text(color = "grey30"),
+    axis.title.x = element_text(margin = margin(t = 8)),
+    axis.title.y = element_text(margin = margin(r = 8)),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+
+
+#############################################
+###############  OPGAVE 4.2  ################
+#############################################
+
+# Henter enkelt-spørgsmålet om større forbrugsgoder
+FORV2 <- dst_meta("FORV1", lang = "da")
+
+FORV2query <- list(
+  INDIKATOR = "Anskaffelse af større forbrugsgoder, fordelagtigt for øjeblikket",
+  Tid = "*"
+)
+
+FORV2 <- dst_get_data(table = "FORV1", query = FORV2query, lang = "da")
+FORV2 <- FORV2[as.Date(FORV2$TID) > as.Date("1999-12-01"), ]
+FORV2 <- FORV2[as.Date(FORV2$TID) < as.Date("2025-09-01"), ]
+
+# Finder gennemsnittet
+mean(FORV2$value)
+
+
+
+#############################################
+###############  OPGAVE 4.3  ################
+#############################################
+
+# Henter husholdningernes forbrug (15 grupper)
+NKHC021 <- dst_meta("NKHC021", lang = "da")
+
+forbrugquery <- list(
+  FORMAAAL = "*",
+  PRISENHED = "2020-priser, kædede værdier",
+  SÆSON = "Sæsonkorrigeret",
+  TID = "*"
+)
+
+Forbrugdf <- dst_get_data(table = "NKHC021", query = forbrugquery, lang = "da")
+Forbrugdf <- Forbrugdf[as.Date(Forbrugdf$TID) >= as.Date("2019-10-01"), ]
+Forbrugdf <- Forbrugdf %>% filter(FORMAAAL != "CPT I alt")
+
+# Finder hvad der bruges mest på i 2025
+Forbrug_2025 <- Forbrugdf %>% filter(TID == "2025-07-01")
+
+# Alternativt gennemsnit
+Gennemsnit_2025 <- Forbrugdf %>%
+  filter(format(TID, "%Y") == "2025") %>%
+  group_by(FORMAAAL) %>%
+  summarise(Forbrugdf = mean(value))
+
+# Finder ændring fra 2020 til 2025
+F2020 <- Forbrugdf[Forbrugdf$TID == as.Date("2020-01-01"), c("FORMAAAL", "value")]
+F2025 <- Forbrugdf[Forbrugdf$TID == as.Date("2025-01-01"), c("FORMAAAL", "value")]
+Ændringer <- merge(F2020, F2025, by = "FORMAAAL")
+Ændringer$pct_change <- 100 * (Ændringer$value.y / Ændringer$value.x - 1)
+
+
+
+#############################################
+###############  OPGAVE 4.4  ################
+#############################################
+
+# Konstruerer DI's forbrugertillidsindikator (gennemsnit af 4 spørgsmål)
+DIquery <- list(
+  INDIKATOR = c(
+    "Familiens økonomiske situation i dag, sammenlignet med for et år siden",
+    "Danmarks økonomiske situation i dag, sammenlignet med for et år siden",
+    "Anskaffelse af større forbrugsgoder, fordelagtigt for øjeblikket",
+    "Anskaffelse af større forbrugsgoder, inden for de næste 12 mdr."
+  ),
+  Tid = "*"
+)
+
+DIFTI <- dst_get_data(table = "FORV1", query = DIquery, lang = "da")
+DIFTI <- DIFTI[as.Date(DIFTI$TID) > as.Date("1999-12-01"), ]
+DIFTI <- DIFTI[as.Date(DIFTI$TID) < as.Date("2025-09-01"), ]
+# Finder gennemsnit så vi har indikatoren
+DIFTI <- DIFTI %>%
+  group_by(TID) %>%
+  summarise(Indikator = mean(value))
+
+
+# Henter DST’s forbrugertillidsindikator
+DSTquery <- list(INDIKATOR = "Forbrugertillidsindikatoren", Tid = "*")
+DSTFTI <- dst_get_data(table = "FORV1", query = DSTquery, lang = "da")
+DSTFTI <- DSTFTI[as.Date(DSTFTI$TID) > as.Date("1999-12-01"), ]
+DSTFTI <- DSTFTI[as.Date(DSTFTI$TID) < as.Date("2025-09-01"), ]
+
+
+# Omregner begge indikatorer til kvartaler
+DSTkvartal <- data.frame(Kvartal = character(), Værdi = double())
+for (i in seq_len(nrow(DSTFTI))) {
+  if (i %% 3 == 0) {
+    mean_score <- mean(DSTFTI$value[(i-2):i])
+    tmp <- data.frame(Kvartal = DSTFTI$TID[i], Værdi = mean_score)
+    DSTkvartal <- rbind(DSTkvartal, tmp)
+  }
+}
+
+DIkvartal <- data.frame(Kvartal = character(), Værdi = double())
+for (i in seq_len(nrow(DIFTI))) {
+  if (i %% 3 == 0) {
+    mean_score <- mean(DIFTI$Indikator[(i-2):i])
+    tmp <- data.frame(Kvartal = DIFTI$TID[i], Værdi = mean_score)
+    DIkvartal <- rbind(DIkvartal, tmp)
+  }
+}
+
+
+# Henter forbrug igen til regressionerne
+forbrugquery2 <- list(
+  FORMAAAL = "*",
+  PRISENHED = "2020-priser, kædede værdier",
+  SÆSON = "Sæsonkorrigeret",
+  TID = "*"
+)
+Forbrugdf2 <- dst_get_data(table = "NKHC021", query = forbrugquery2, lang = "da")
+Forbrugdf2 <- Forbrugdf2[as.Date(Forbrugdf2$TID) >= as.Date("1999-10-01"), ]
+Forbrugdf2 <- Forbrugdf2 %>% filter(FORMAAAL != "CPT I alt")
+
+# Fjerner unødvendige kolonner
+Forbrugdf2 <- Forbrugdf2[, -c(2, 3)]
+
+
+# Laver wide-format af forbrugsgrupperne
+Forbrug_wide <- pivot_wider(
+  Forbrugdf2,
+  id_cols = TID,
+  names_from = FORMAAAL,
+  values_from = value
+)
+
+
+# Joiner alt i én dataframe
+join <- cbind(Forbrug_wide, DIkvartal)
+join <- cbind(join, DSTkvartal)
+
+colnames(join)[20] <- "DST"
+colnames(join)[18] <- "DI"
+
+
+
+# Nu til simple linæere regressioner
+
+# Definerer 15 forbrugsgrupper
+forbrugs_grupper <- c(
+  "CPA Fødevarer mv.",
+  "CPB Drikkevarer og tobak mv.",
+  "CPC Beklædning og fodtøj",
+  "CPD Boligbenyttelse",
+  "CPE Elektricitet, fjernvarme og andet brændsel",
+  "CPF Boligudstyr, husholdningstjenester mv.",
+  "CPG Medicin, lægeudgifter o.l.",
+  "CPH Køb af køretøjer",
+  "CPI Drift af køretøjer og transporttjenester",
+  "CPJ Information og kommunikation",
+  "CPK Fritid, sport og kultur",
+  "CPL Undervisning",
+  "CPM Restauranter og hoteller",
+  "CPN Forsikring og finansielle tjenester",
+  "CPO Andre varer og tjenester"
+)
+
+# Laver lister til regressioner
+resultater_dst <- vector("list", length(forbrugs_grupper))
+names(resultater_dst) <- forbrugs_grupper
+
+resultater_di <- vector("list", length(forbrugs_grupper))
+names(resultater_di) <- forbrugs_grupper
+
+
+# Kører regressioner for DST og DI
+for (grp in forbrugs_grupper) {
+  
+  form_dst <- reformulate("DST", response = grp)
+  resultater_dst[[grp]] <- summary(lm(form_dst, data = join))
+  
+  form_di <- reformulate("DI", response = grp)
+  resultater_di[[grp]] <- summary(lm(form_di, data = join))
+}
+
+# Eksempel på adgang
+resultater_dst[["CPA Fødevarer mv."]]
+resultater_di [["CPA Fødevarer mv."]]
+
+
+# Test
+summary(lm(`CPA Fødevarer mv.` ~ DST, data = join))
+
+# Finder p-værdien for DST-koefficienten i hver model
+dst_p_values <- sapply(resultater_dst, function(x) {
+  if (inherits(x, "summary.lm")) {
+    return(coef(x)[2, 4])   # p-værdi
+  } else {
+    return(NA)              # marker fejlende modeller
+  }
+})
+
+
+di_p_values <- sapply(resultater_di, function(x) {
+  if (inherits(x, "summary.lm")) {
+    return(coef(x)[2, 4])
+  } else {
+    return(NA)
+  }
+})
+
+sort(dst_p_values)
+sort(di_p_values)
+
+
+
